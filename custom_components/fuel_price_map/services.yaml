@@ -1,0 +1,8 @@
+refresh_tomorrow_prices:
+  name: Refresh tomorrow's prices
+  description: >
+    Manually fetch tomorrow's FuelWatch prices right now, instead of waiting
+    for the scheduled 2:35pm check. Useful for testing - if it's currently
+    outside FuelWatch's ~2:30pm-11:59pm publish window, this will correctly
+    find no valid data yet and log why (check Settings > System > Logs,
+    filter "fuel_price_map").

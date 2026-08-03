@@ -1,0 +1,12 @@
+{
+  "domain": "fuel_price_map",
+  "name": "Fuel Price Map",
+  "codeowners": ["@yourname"],
+  "config_flow": true,
+  "documentation": "https://github.com/yourname/fuel_price_map",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yourname/fuel_price_map/issues",
+  "requirements": [],
+  "version": "0.7.1"
+}

@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fuel Price Map",
+        "description": "Choose the fuel price data provider.",
+        "data": { "provider": "Provider" }
+      },
+      "location": {
+        "title": "Location",
+        "description": "The provider works out which suburbs/regions to query from this coordinate and radius automatically.",
+        "data": {
+          "latitude": "Home latitude",
+          "longitude": "Home longitude",
+          "radius_km": "Radius (km)"
+        }
+      },
+      "fuel": {
+        "title": "Fuel types & exclusions",
+        "data": {
+          "fuel_types": "Fuel types to track",
+          "excluded_brands": "Brands to exclude"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fuel Price Map options",
+        "menu_options": {
+          "general": "General settings",
+          "discounts": "Manage brand discounts",
+          "finish": "Save and close"
+        }
+      },
+      "general": {
+        "title": "General settings",
+        "data": {
+          "radius_km": "Radius (km)",
+          "excluded_brands": "Brands to exclude",
+          "max_stations": "Max stations shown on map/list",
+          "map_marker_count": "Number of map marker sensors (rank_1..N)",
+          "update_time_1": "Update time 1",
+          "update_time_2": "Update time 2 (optional)",
+          "history_days": "History length (days)"
+        }
+      },
+      "discounts": {
+        "title": "Brand discounts",
+        "description": "Current discounts: {current}",
+        "menu_options": {
+          "discounts_add": "Add a discount",
+          "discounts_remove": "Remove a discount",
+          "init": "Back"
+        }
+      },
+      "discounts_add": {
+        "title": "Add a brand discount",
+        "data": {
+          "brand": "Brand",
+          "discount_cents": "Discount (cents per litre)"
+        }
+      },
+      "discounts_remove": {
+        "title": "Remove a brand discount",
+        "data": {
+          "brand": "Brand to remove"
+        }
+      }
+    }
+  }
+}
