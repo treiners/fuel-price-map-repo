@@ -1,6 +1,5 @@
 {
   "name": "Fuel Price Map",
   "homeassistant": "2024.1.0",
-  "content_in_root": false,
-  "zip_release": false
+  "content_in_root": false
 }
