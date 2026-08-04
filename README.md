@@ -13,8 +13,9 @@ frontend.
 for querying FuelWatch directly from the terminal - neither is required for
 the integration itself, both are just handy references.
 
-![WA Fuel Price Logo](custom_components/brands/logo.png)
-![WA Fuel Price Screen](custom_components/fuelmap_example.png)
+![WA Fuel Price Logo](custom_components/fuel_price_map/brand/logo.png)
+![WA Fuel Price Screen](custom_components/fuel_price_map/fuelmap_example.png)
+![WA Fuel Price Screen](custom_components/fuel_price_map/general_setting.png)
 
 
 ## Install/upgrade
