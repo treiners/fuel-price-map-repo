@@ -13,7 +13,11 @@ frontend.
 for querying FuelWatch directly from the terminal - neither is required for
 the integration itself, both are just handy references.
 
-## Install / upgrade
+![WA Fuel Price Logo](custom_components/brands/logo.png)
+![WA Fuel Price Screen](custom_components/fuelmap_example.png)
+
+
+## Install/upgrade
 
 ### Via HACS (recommended)
 1. HACS → ⋮ (top right) → **Custom repositories**
@@ -29,10 +33,7 @@ you cut one).
 1. Copy `custom_components/fuel_price_map/` into your Home Assistant
    `config/custom_components/` folder, **replacing** the existing one.
 2. Restart Home Assistant.
-3. **This is a v0.2 config schema change** (the manual "Suburb" field is gone
-   — setup now only asks for coordinates + radius, and resolves the right
-   FuelWatch suburbs internally). Remove the existing "Fuel Price Map"
-   integration entry first, then **Settings → Devices & Services → Add
+3. Remove the existing "Fuel Price Map" integration entry first, then **Settings → Devices & Services → Add
    Integration → "Fuel Price Map"** to re-add it.
 4. Setup steps:
    - Provider (FuelWatch WA for now)
