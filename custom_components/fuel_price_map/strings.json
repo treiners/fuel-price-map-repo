@@ -12,6 +12,7 @@
         "data": {
           "latitude": "Home latitude",
           "longitude": "Home longitude",
+          "location_entity": "Optional person or device tracker",
           "radius_km": "Radius (km)"
         }
       },
@@ -38,6 +39,7 @@
         "title": "General settings",
         "data": {
           "radius_km": "Radius (km)",
+          "location_entity": "Optional person or device tracker",
           "excluded_brands": "Brands to exclude",
           "max_stations": "Max stations shown on map/list",
           "map_marker_count": "Number of map marker sensors (rank_1..N)",

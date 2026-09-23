@@ -11,6 +11,7 @@ PLATFORMS = ["sensor", "select", "geo_location"]
 CONF_PROVIDER = "provider"
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
+CONF_LOCATION_ENTITY = "location_entity"
 CONF_RADIUS_KM = "radius_km"
 CONF_FUEL_TYPES = "fuel_types"
 CONF_EXCLUDED_BRANDS = "excluded_brands"

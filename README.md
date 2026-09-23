@@ -27,8 +27,10 @@ the integration itself, both are just handy references.
 4. **Settings → Devices & Services → Add Integration → "Fuel Price Map"**
 
 Future updates then show up as normal HACS updates, tied to GitHub releases
-on this repo (tag a release matching `manifest.json`'s `version` each time
-you cut one).
+on this repo. The GitHub release tag must exactly match the semantic version
+in `custom_components/fuel_price_map/manifest.json` (for example, manifest
+`0.8.0` requires tag `0.8.0`). See [CHANGELOG.md](CHANGELOG.md) for the
+release and upgrade checklist.
 
 ### Manual (fallback)
 1. Copy `custom_components/fuel_price_map/` into your Home Assistant
@@ -39,9 +41,12 @@ you cut one).
 4. Setup steps:
    - Provider (FuelWatch WA for now)
    - Home coordinates (defaults to your HA home zone) + radius (km)
+   - Optional `person` or `device_tracker` entity for current-location
+     searches; saved coordinates remain the fallback
    - Fuel types to track + brands to exclude (Costco pre-selected)
 5. Options (gear icon) let you change radius, excluded brands, max stations
-   shown, the two daily update times, and history length afterwards.
+   shown, the two daily update times, history length, and the optional
+   current-location entity afterwards.
 
 Note: dense metro radii pull in a lot of suburbs (e.g. ~90 within 10 km of
 central Perth) — each is a separate request, throttled to 8 concurrent, still
@@ -65,11 +70,23 @@ nearby — no per-station sensor, no per-station recorder history.
 
 Fetched on a schedule (default 07:00 and 16:00, configurable, max 2/day) via
 `async_track_time_change`, not continuous polling — matches FuelWatch's fair
-use expectations and the "twice a day" requirement.
+use expectations and the "twice a day" requirement. A dynamic location entity
+is read at those scheduled (or manually requested) refreshes; state changes do
+not trigger immediate requests. If it is unavailable or invalid, the saved
+coordinates are used.
+
+FuelWatch publishes tomorrow's prices only from roughly 14:00 Perth time.
+The integration checks hourly at five minutes past the hour after that
+threshold, regardless of the Home Assistant host timezone, and only accepts
+tomorrow data when the RSS `date` field matches Perth tomorrow. The cache
+expires at the Perth calendar-day transition.
 
 ## Frontend
 
-See `examples/example_dashboard.yaml`:
+See `examples/example_dashboard.yaml`. It uses HA's responsive `masonry` view:
+cards stack naturally on phones and form columns on larger screens. The
+station list and map use viewport-relative sizing rather than a fixed desktop
+height.
 - Left menu: Bubble Card pop-up with the two select entities + a sorted price
   list (uses `auto-entities`, sorted by the `price` attribute on the
   geo_location entities), wrapped with `card_mod` for a fixed-height
@@ -108,11 +125,11 @@ selects, and map are provider-agnostic.
 
 ## Ideas for later (not implemented yet)
 
-1. **Next-day trend indicator** — ✅ implemented (v0.7.0). FuelWatch publishes
-   tomorrow's price from ~2:30pm-11:59pm WA time; a dedicated fetch runs at
-   14:35 daily and validates the returned data's own date field actually
-   says tomorrow (the feed silently falls back to today's data outside that
-   window instead of erroring, confirmed by direct testing) before caching
+1. **Next-day trend indicator** — ✅ implemented (v0.8.0). FuelWatch publishes
+   tomorrow's price after roughly 14:00 Perth time; hourly checks at `HH:05`
+   validate the returned data's own date field actually says tomorrow (the
+   feed silently falls back to today's data outside that window instead of
+   erroring) before caching
    anything. `trend_cents` is exposed as an attribute everywhere price is
    shown. Display: the "cheapest nearby" list shows `+3.0¢ tmrw` /
    `-2.0¢ tmrw` in the row name (plain text - colouring it red/green would
@@ -148,15 +165,10 @@ selects, and map are provider-agnostic.
    list had a spelling gap" class of bug entirely. Best done as a periodic
    regeneration of the bundled file rather than a live per-fetch call, to
    avoid adding a runtime dependency on a third-party API's uptime.
-8. **"Nearest to current location" as a second hub.** Most of the fetch
-   pipeline (suburb resolution, radius filter) already recomputes from
-   whatever lat/lon it's given each cycle - it's not hardcoded to a fixed
-   home point. What's genuinely new: reading a `device_tracker`/`person`
-   entity's live position instead of a static coordinate, and an on-demand
-   refresh trigger instead of the twice-daily schedule (which is
-   intentionally tuned for a static point, not a moving one). Recommend a
-   separate config entry/hub for this rather than a mode on the existing
-   one, so the home setup's simple scheduled behaviour stays untouched.
+8. **"Nearest to current location" as a second hub.** An optional
+   `person`/`device_tracker` is now supported on the existing entry, with
+   static coordinates as fallback. It intentionally uses the existing
+   scheduled/manual refresh cadence rather than refreshing on every movement.
 
 ## Known limitations / things worth reviewing together
 

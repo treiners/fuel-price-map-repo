@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
-from datetime import time as dt_time
+from datetime import date
 from math import asin, cos, radians, sin, sqrt
 
 from homeassistant.core import HomeAssistant, callback
@@ -18,6 +17,7 @@ from .const import (
     CONF_FUEL_TYPES,
     CONF_HISTORY_DAYS,
     CONF_LATITUDE,
+    CONF_LOCATION_ENTITY,
     CONF_LONGITUDE,
     CONF_RADIUS_KM,
     CONF_UPDATE_TIMES,
@@ -26,6 +26,7 @@ from .const import (
 )
 from .providers import FuelPriceProvider, StationPrice
 from .storage import PriceHistoryStore
+from .timing import expected_tomorrow_date, feed_date_is_tomorrow, tomorrow_feed_allowed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +78,20 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
     @property
     def home_coords(self) -> tuple[float, float]:
         opts = self.options
+        entity_id = opts.get(CONF_LOCATION_ENTITY)
+        if entity_id:
+            state = self.hass.states.get(entity_id)
+            if state:
+                try:
+                    latitude = float(state.attributes["latitude"])
+                    longitude = float(state.attributes["longitude"])
+                    if -90 <= latitude <= 90 and -180 <= longitude <= 180:
+                        return latitude, longitude
+                except (KeyError, TypeError, ValueError):
+                    _LOGGER.warning(
+                        "Location entity %s has no valid coordinates; using configured fallback",
+                        entity_id,
+                    )
         return (
             opts.get(CONF_LATITUDE, self.hass.config.latitude),
             opts.get(CONF_LONGITUDE, self.hass.config.longitude),
@@ -100,11 +115,10 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
             )
             self._unsub_time_triggers.append(unsub)
 
-        # Dedicated trigger for tomorrow's prices - FuelWatch only publishes
-        # these from ~2:30pm WA time, so this is fixed and separate from the
-        # user-configurable today-price schedule above, not folded into it.
+        # Check hourly at :05. The callback gates on Perth time because HA may
+        # run in another timezone, and validates the feed date before caching.
         unsub = async_track_time_change(
-            self.hass, self._scheduled_tomorrow_refresh, hour=14, minute=35, second=0
+            self.hass, self._scheduled_tomorrow_refresh, minute=5, second=0
         )
         self._unsub_time_triggers.append(unsub)
 
@@ -117,7 +131,8 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
         await self.async_refresh()
 
     async def _scheduled_tomorrow_refresh(self, _now) -> None:
-        await self.async_refresh_tomorrow_now()
+        if tomorrow_feed_allowed():
+            await self.async_refresh_tomorrow_now()
 
     async def async_refresh_tomorrow_now(self) -> None:
         """Public entry point for manually triggering the tomorrow-price fetch,
@@ -141,7 +156,13 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
         opts = self.options
         radius_km = opts.get(CONF_RADIUS_KM, 10)
         home_lat, home_lon = self.home_coords
-        expected_date = (date.today() + timedelta(days=1)).isoformat()
+        if not tomorrow_feed_allowed():
+            return
+        expected_date_obj = expected_tomorrow_date()
+        expected_date = expected_date_obj.isoformat()
+        if self._tomorrow_valid_date != expected_date_obj:
+            self._tomorrow_prices.clear()
+            self._tomorrow_valid_date = None
 
         any_valid = False
         for fuel_type in self.fuel_types:
@@ -161,7 +182,7 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
             if not stations:
                 continue
 
-            if not any(s.updated == expected_date for s in stations):
+            if not any(feed_date_is_tomorrow(s.updated) for s in stations):
                 _LOGGER.warning(
                     "Tomorrow-price data for %s doesn't look like tomorrow's data "
                     "yet (date field didn't match %s) - skipping. Probably outside "
@@ -174,7 +195,7 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
             any_valid = True
 
         if any_valid:
-            self._tomorrow_valid_date = date.today() + timedelta(days=1)
+            self._tomorrow_valid_date = expected_date_obj
             _LOGGER.info("Tomorrow's prices fetched and validated for %s", self._tomorrow_valid_date)
 
     async def _async_update_data(self) -> dict[str, list[StationPrice]]:
@@ -187,7 +208,7 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
             b.lower(): float(v) for b, v in opts.get(CONF_BRAND_DISCOUNTS, {}).items()
         }
         home_lat, home_lon = self.home_coords
-        tomorrow_is_valid = self._tomorrow_valid_date == date.today() + timedelta(days=1)
+        tomorrow_is_valid = self._tomorrow_valid_date == expected_tomorrow_date()
 
         result: dict[str, list[StationPrice]] = {}
 

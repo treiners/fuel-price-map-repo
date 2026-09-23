@@ -14,6 +14,8 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     TimeSelector,
+    EntitySelector,
+    EntitySelectorConfig,
 )
 
 from .const import (
@@ -22,6 +24,7 @@ from .const import (
     CONF_FUEL_TYPES,
     CONF_HISTORY_DAYS,
     CONF_LATITUDE,
+    CONF_LOCATION_ENTITY,
     CONF_LONGITUDE,
     CONF_MAP_MARKER_COUNT,
     CONF_MAX_STATIONS,
@@ -97,6 +100,9 @@ class FuelPriceMapConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_LONGITUDE, default=self.hass.config.longitude
                 ): vol.Coerce(float),
+                vol.Optional(CONF_LOCATION_ENTITY): EntitySelector(
+                    EntitySelectorConfig(domain=["person", "device_tracker"])
+                ),
                 # No suburb needed -- the provider resolves which suburbs/
                 # regions to query internally from the coordinate + radius.
                 vol.Required(CONF_RADIUS_KM, default=DEFAULT_RADIUS_KM): vol.Coerce(float),
@@ -208,6 +214,7 @@ class FuelPriceMapOptionsFlow(config_entries.OptionsFlow):
             self._pending.update(
                 {
                     CONF_RADIUS_KM: user_input[CONF_RADIUS_KM],
+                    CONF_LOCATION_ENTITY: user_input.get(CONF_LOCATION_ENTITY),
                     CONF_EXCLUDED_BRANDS: user_input.get(CONF_EXCLUDED_BRANDS, []),
                     CONF_MAX_STATIONS: user_input[CONF_MAX_STATIONS],
                     CONF_MAP_MARKER_COUNT: user_input[CONF_MAP_MARKER_COUNT],
@@ -222,6 +229,12 @@ class FuelPriceMapOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_RADIUS_KM, default=current.get(CONF_RADIUS_KM, DEFAULT_RADIUS_KM)
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_LOCATION_ENTITY,
+                    default=current.get(CONF_LOCATION_ENTITY),
+                ): EntitySelector(
+                    EntitySelectorConfig(domain=["person", "device_tracker"])
+                ),
                 vol.Optional(
                     CONF_EXCLUDED_BRANDS,
                     default=current.get(CONF_EXCLUDED_BRANDS, DEFAULT_EXCLUDED_BRANDS),
