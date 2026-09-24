@@ -54,7 +54,7 @@ class _BaseFuelSelect(SelectEntity):
         self._entry = entry
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
+            name="Fuel Price Map",
             manufacturer="Fuel Price Map",
         )
 
@@ -67,6 +67,7 @@ class FuelTypeSelect(_BaseFuelSelect):
 
     def __init__(self, entry, selection, fuel_type_keys, fuel_labels) -> None:
         super().__init__(entry)
+        self.entity_id = "select.fuel_price_map_fuel_type"
         self._selection = selection
         self._key_to_label = {k: fuel_labels.get(k, k) for k in fuel_type_keys}
         self._label_to_key = {v: k for k, v in self._key_to_label.items()}
@@ -96,6 +97,7 @@ class PreferredBrandSelect(_BaseFuelSelect):
 
     def __init__(self, entry, selection, brand_options: list[str]) -> None:
         super().__init__(entry)
+        self.entity_id = "select.fuel_price_map_preferred_brand"
         self._selection = selection
         self._attr_unique_id = f"{entry.entry_id}_select_preferred_brand"
         self._attr_options = brand_options
@@ -125,6 +127,7 @@ class SortOrderSelect(_BaseFuelSelect):
 
     def __init__(self, entry, selection) -> None:
         super().__init__(entry)
+        self.entity_id = "select.fuel_price_map_sort_order"
         self._selection = selection
         self._attr_unique_id = f"{entry.entry_id}_select_sort_order"
         self._attr_options = list(self._LABELS.values())

@@ -93,6 +93,7 @@ FUELWATCH_BRANDS = {
 
 SIGNAL_STATIONS_UPDATED = f"{DOMAIN}_stations_updated"
 SIGNAL_SELECTION_CHANGED = f"{DOMAIN}_selection_changed"
+SIGNAL_LOCATION_CHANGED = f"{DOMAIN}_location_changed"
 
 ATTR_BRAND = "brand"
 ATTR_ADDRESS = "address"

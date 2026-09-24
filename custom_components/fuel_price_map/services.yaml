@@ -6,3 +6,17 @@ refresh_tomorrow_prices:
     outside FuelWatch's ~2:30pm-11:59pm publish window, this will correctly
     find no valid data yet and log why (check Settings > System > Logs,
     filter "fuel_price_map").
+
+toggle_location:
+  name: Toggle search location
+  description: >
+    Toggle between the configured Home Assistant home coordinates and the
+    optional person/device_tracker location. The tracker must be available
+    with valid latitude and longitude attributes.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional entry ID when multiple Fuel Price Map entries exist.
+      required: false
+      selector:
+        text:

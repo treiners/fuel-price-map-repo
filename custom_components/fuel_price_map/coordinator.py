@@ -22,11 +22,13 @@ from .const import (
     CONF_RADIUS_KM,
     CONF_UPDATE_TIMES,
     DOMAIN,
+    SIGNAL_LOCATION_CHANGED,
     SIGNAL_STATIONS_UPDATED,
 )
 from .providers import FuelPriceProvider, StationPrice
 from .storage import PriceHistoryStore
 from .timing import expected_tomorrow_date, feed_date_is_tomorrow, tomorrow_feed_allowed
+from .location import entity_coordinates
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +68,7 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
         # midnight without needing an explicit clear step.
         self._tomorrow_prices: dict[str, dict[str, float]] = {}
         self._tomorrow_valid_date: date | None = None
+        self._tracker_active = False
 
     @property
     def options(self) -> dict:
@@ -79,23 +82,76 @@ class FuelPriceCoordinator(DataUpdateCoordinator[dict[str, list[StationPrice]]])
     def home_coords(self) -> tuple[float, float]:
         opts = self.options
         entity_id = opts.get(CONF_LOCATION_ENTITY)
-        if entity_id:
+        if self._tracker_active and entity_id:
             state = self.hass.states.get(entity_id)
-            if state:
-                try:
-                    latitude = float(state.attributes["latitude"])
-                    longitude = float(state.attributes["longitude"])
-                    if -90 <= latitude <= 90 and -180 <= longitude <= 180:
-                        return latitude, longitude
-                except (KeyError, TypeError, ValueError):
-                    _LOGGER.warning(
-                        "Location entity %s has no valid coordinates; using configured fallback",
-                        entity_id,
-                    )
+            coords = entity_coordinates(state)
+            if coords:
+                return coords
+            attrs = getattr(state, "attributes", {}) if state is not None else {}
+            _LOGGER.warning(
+                "Active location entity %s is unavailable or has invalid coordinates; "
+                "staying on the home location. Raw attributes: %s",
+                entity_id,
+                dict(attrs),
+            )
         return (
             opts.get(CONF_LATITUDE, self.hass.config.latitude),
             opts.get(CONF_LONGITUDE, self.hass.config.longitude),
         )
+
+    @property
+    def tracker_configured(self) -> bool:
+        return bool(self.options.get(CONF_LOCATION_ENTITY))
+
+    @property
+    def tracker_active(self) -> bool:
+        if not self._tracker_active:
+            return False
+        entity_id = self.options.get(CONF_LOCATION_ENTITY)
+        return bool(entity_id and entity_coordinates(self.hass.states.get(entity_id)))
+
+    async def async_toggle_location(self) -> bool:
+        """Toggle between home and the configured tracker, then refresh."""
+        previous = self._tracker_active
+        if self._tracker_active:
+            _LOGGER.info(
+                "Fuel Price Map: switching active location from tracker to home zone "
+                "(%s)",
+                self.options.get(CONF_LOCATION_ENTITY),
+            )
+            self._tracker_active = False
+            await self.async_refresh()
+            if not self.last_update_success:
+                self._tracker_active = previous
+                _LOGGER.warning("Could not refresh FuelWatch data at the home location")
+                return False
+            async_dispatcher_send(self.hass, SIGNAL_LOCATION_CHANGED)
+            _LOGGER.info("Fuel Price Map: active location now home zone")
+            return True
+        entity_id = self.options.get(CONF_LOCATION_ENTITY)
+        coords = entity_coordinates(self.hass.states.get(entity_id)) if entity_id else None
+        if not coords:
+            _LOGGER.warning(
+                "Cannot activate tracker location: %s is unset, unavailable, "
+                "or has no valid latitude/longitude",
+                entity_id or "no entity configured",
+            )
+            return False
+        _LOGGER.info(
+            "Fuel Price Map: switching active location from home zone to tracker %s "
+            "(coords=%s)",
+            entity_id,
+            coords,
+        )
+        self._tracker_active = True
+        await self.async_refresh()
+        if not self.last_update_success:
+            self._tracker_active = previous
+            _LOGGER.warning("Could not refresh FuelWatch data at the tracker location")
+            return False
+        async_dispatcher_send(self.hass, SIGNAL_LOCATION_CHANGED)
+        _LOGGER.info("Fuel Price Map: active location now tracker mode (%s)", entity_id)
+        return True
 
     def async_setup_schedule(self) -> None:
         """Register the (max two) configured daily fetch times."""

@@ -7,12 +7,15 @@ many stations are in range. The rolling 14-day/2x-daily history lives in the
 """
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -28,18 +31,21 @@ from .const import (
     ATTR_TREND_CENTS,
     ATTR_UPDATED,
     CONF_FUEL_TYPES,
+    CONF_LOCATION_ENTITY,
     CONF_MAP_MARKER_COUNT,
     DEFAULT_MAP_MARKER_COUNT,
     DOMAIN,
     SIGNAL_SELECTION_CHANGED,
+    SIGNAL_LOCATION_CHANGED,
     SIGNAL_STATIONS_UPDATED,
     SORT_DISTANCE,
 )
 from .coordinator import FuelPriceCoordinator
+from .location import location_icon
 
+_LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+async def async_setup_entry(    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: FuelPriceCoordinator = data["coordinator"]
@@ -60,6 +66,7 @@ async def async_setup_entry(
         RankedStationSensor(hass, entry, coordinator, selection, rank)
         for rank in range(1, marker_count + 1)
     ]
+    entities.append(ActiveLocationSensor(hass, entry, coordinator))
 
     async_add_entities(entities)
 
@@ -81,7 +88,7 @@ class LowestFuelPriceSensor(CoordinatorEntity[FuelPriceCoordinator], SensorEntit
         self._attr_unique_id = f"{entry.entry_id}_{fuel_type}_lowest_price"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
+            name="Fuel Price Map",
             manufacturer="Fuel Price Map",
         )
 
@@ -120,6 +127,75 @@ class LowestFuelPriceSensor(CoordinatorEntity[FuelPriceCoordinator], SensorEntit
         return attrs
 
 
+class ActiveLocationSensor(SensorEntity):
+    """Stable map focus point for the active search location."""
+
+    _attr_icon = "mdi:crosshairs-gps"
+    _attr_should_poll = False
+
+    def __init__(self, hass, entry, coordinator) -> None:
+        self.hass = hass
+        self._entry = entry
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_active_location"
+        self.entity_id = f"sensor.{DOMAIN}_active_location"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Fuel Price Map",
+            manufacturer="Fuel Price Map",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_LOCATION_CHANGED, self._handle_update)
+        )
+        tracker_entity = self._coordinator.options.get(CONF_LOCATION_ENTITY)
+        if tracker_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, [tracker_entity], self._handle_update
+                )
+            )
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_update(self, *_args) -> None:
+        mode = "tracker" if self._coordinator.tracker_active else "home"
+        _LOGGER.info(
+            "Fuel Price Map active-location sensor update: mode=%s source=%s lat/lon=%s",
+            mode,
+            self._coordinator.options.get(CONF_LOCATION_ENTITY, "zone.home")
+            if self._coordinator.tracker_active
+            else "zone.home",
+            self._coordinator.home_coords,
+        )
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> str:
+        return "tracker" if self._coordinator.tracker_active else "home"
+
+    @property
+    def icon(self) -> str:
+        """Show the actual active search mode in the dashboard control."""
+        return location_icon(self._coordinator.tracker_active)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        latitude, longitude = self._coordinator.home_coords
+        active = self._coordinator.tracker_active
+        return {
+            "latitude": latitude,
+            "longitude": longitude,
+            "mode": "tracker" if active else "home",
+            "source": (
+                self._coordinator.options.get(CONF_LOCATION_ENTITY)
+                if active
+                else "zone.home"
+            ),
+        }
+
+
 class RankedStationSensor(SensorEntity):
     """One of a small fixed set of 'live' map-marker sensors.
 
@@ -147,7 +223,7 @@ class RankedStationSensor(SensorEntity):
         self.entity_id = f"sensor.{DOMAIN}_rank_{rank}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
+            name="Fuel Price Map",
             manufacturer="Fuel Price Map",
         )
 
@@ -177,11 +253,9 @@ class RankedStationSensor(SensorEntity):
     @property
     def name(self) -> str:
         if self._station:
-            # Don't prepend brand - FuelWatch trading names (station.name)
-            # usually already include it (e.g. "OMG Metro Yangebup"),
-            # which caused duplicated names like "#2 OMG Metro OMG Metro
-            # Yangebup". Brand is still available as its own attribute.
-            return f"#{self._rank} {self._station.name}"
+            # Keep the entity friendly name to the station name so map-card
+            # hover text is useful; rank remains an attribute.
+            return self._station.name
         return f"Map marker {self._rank} (no station)"
 
     def _build_map_label(self) -> str:
@@ -191,7 +265,8 @@ class RankedStationSensor(SensorEntity):
             label += "*"
         trend = station.trend_cents
         if trend is not None and abs(trend) >= 0.05:
-            label += " \u25b2" if trend > 0 else " \u25bc"  # up-triangle / down-triangle
+            arrow = "\u25b2" if trend > 0 else "\u25bc"
+            label += f" {trend:+.1f}c {arrow}"
         return label
 
     @property
@@ -201,7 +276,14 @@ class RankedStationSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         if not self._station:
-            return {"latitude": None, "longitude": None, "rank": self._rank}
+            return {
+                "latitude": None,
+                "longitude": None,
+                "rank": self._rank,
+                "search_location": "tracker"
+                if self._coordinator.tracker_active
+                else "home",
+            }
         return {
             "latitude": self._station.latitude,
             "longitude": self._station.longitude,
@@ -217,4 +299,7 @@ class RankedStationSensor(SensorEntity):
             ATTR_UPDATED: self._station.updated,
             "fuel_type": self._station.fuel_type,
             "rank": self._rank,
+            "search_location": "tracker"
+            if self._coordinator.tracker_active
+            else "home",
         }

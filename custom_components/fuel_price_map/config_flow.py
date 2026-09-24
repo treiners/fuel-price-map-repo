@@ -44,6 +44,7 @@ from .const import (
 )
 from .providers.fuelwatch import BRANDS as FUELWATCH_BRANDS
 from .providers.fuelwatch import FUEL_TYPE_LABELS as FUELWATCH_FUEL_TYPES
+from .location import normalize_optional_entity
 
 
 def _provider_fuel_types(provider_id: str) -> dict[str, str]:
@@ -89,7 +90,17 @@ class FuelPriceMapConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_location(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._location_data = user_input
+            self._location_data = {
+                key: value
+                for key, value in user_input.items()
+                if key != CONF_LOCATION_ENTITY
+                or normalize_optional_entity(value) is not None
+            }
+            location_entity = normalize_optional_entity(
+                user_input.get(CONF_LOCATION_ENTITY)
+            )
+            if location_entity:
+                self._location_data[CONF_LOCATION_ENTITY] = location_entity
             return await self.async_step_fuel()
 
         schema = vol.Schema(
@@ -125,10 +136,7 @@ class FuelPriceMapConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_UPDATE_TIMES: DEFAULT_UPDATE_TIMES,
                 CONF_HISTORY_DAYS: DEFAULT_HISTORY_DAYS,
             }
-            lat = self._location_data[CONF_LATITUDE]
-            lon = self._location_data[CONF_LONGITUDE]
-            title = f"Fuel Price Map ({lat:.3f}, {lon:.3f})"
-            return self.async_create_entry(title=title, data=data)
+            return self.async_create_entry(title="Fuel Price Map", data=data)
 
         schema = vol.Schema(
             {
@@ -183,6 +191,8 @@ class FuelPriceMapOptionsFlow(config_entries.OptionsFlow):
     def _ensure_pending(self) -> dict[str, Any]:
         if self._pending is None:
             self._pending = {**self.config_entry.data, **self.config_entry.options}
+            if not self._pending.get(CONF_LOCATION_ENTITY):
+                self._pending.pop(CONF_LOCATION_ENTITY, None)
             self._pending.setdefault(CONF_BRAND_DISCOUNTS, dict(DEFAULT_BRAND_DISCOUNTS))
         return self._pending
 
@@ -214,7 +224,6 @@ class FuelPriceMapOptionsFlow(config_entries.OptionsFlow):
             self._pending.update(
                 {
                     CONF_RADIUS_KM: user_input[CONF_RADIUS_KM],
-                    CONF_LOCATION_ENTITY: user_input.get(CONF_LOCATION_ENTITY),
                     CONF_EXCLUDED_BRANDS: user_input.get(CONF_EXCLUDED_BRANDS, []),
                     CONF_MAX_STATIONS: user_input[CONF_MAX_STATIONS],
                     CONF_MAP_MARKER_COUNT: user_input[CONF_MAP_MARKER_COUNT],
@@ -222,53 +231,67 @@ class FuelPriceMapOptionsFlow(config_entries.OptionsFlow):
                     CONF_HISTORY_DAYS: user_input[CONF_HISTORY_DAYS],
                 }
             )
+            location_entity = normalize_optional_entity(
+                user_input.get(CONF_LOCATION_ENTITY)
+            )
+            if location_entity:
+                self._pending[CONF_LOCATION_ENTITY] = location_entity
+            else:
+                self._pending.pop(CONF_LOCATION_ENTITY, None)
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=dict(self._pending)
+            )
             return await self.async_step_init()
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_RADIUS_KM, default=current.get(CONF_RADIUS_KM, DEFAULT_RADIUS_KM)
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_LOCATION_ENTITY,
-                    default=current.get(CONF_LOCATION_ENTITY),
-                ): EntitySelector(
-                    EntitySelectorConfig(domain=["person", "device_tracker"])
+        location_key = vol.Optional(CONF_LOCATION_ENTITY)
+        schema_fields = {
+            vol.Required(
+                CONF_RADIUS_KM, default=current.get(CONF_RADIUS_KM, DEFAULT_RADIUS_KM)
+            ): vol.Coerce(float),
+            location_key: EntitySelector(
+                EntitySelectorConfig(domain=["person", "device_tracker"])
+            ),
+            vol.Optional(
+                CONF_EXCLUDED_BRANDS,
+                default=current.get(CONF_EXCLUDED_BRANDS, DEFAULT_EXCLUDED_BRANDS),
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=brand_options, multiple=True, mode=SelectSelectorMode.DROPDOWN
+                )
+            ),
+            vol.Required(
+                CONF_MAX_STATIONS,
+                default=current.get(CONF_MAX_STATIONS, DEFAULT_MAX_STATIONS),
+            ): vol.Coerce(int),
+            vol.Required(
+                CONF_MAP_MARKER_COUNT,
+                default=current.get(CONF_MAP_MARKER_COUNT, DEFAULT_MAP_MARKER_COUNT),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+            vol.Required(
+                "update_time_1",
+                default=current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)[0],
+            ): TimeSelector(),
+            vol.Optional(
+                "update_time_2",
+                default=(
+                    current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)[1]
+                    if len(current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)) > 1
+                    else DEFAULT_UPDATE_TIMES[1]
                 ),
-                vol.Optional(
-                    CONF_EXCLUDED_BRANDS,
-                    default=current.get(CONF_EXCLUDED_BRANDS, DEFAULT_EXCLUDED_BRANDS),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=brand_options, multiple=True, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-                vol.Required(
-                    CONF_MAX_STATIONS,
-                    default=current.get(CONF_MAX_STATIONS, DEFAULT_MAX_STATIONS),
-                ): vol.Coerce(int),
-                vol.Required(
-                    CONF_MAP_MARKER_COUNT,
-                    default=current.get(CONF_MAP_MARKER_COUNT, DEFAULT_MAP_MARKER_COUNT),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
-                vol.Required(
-                    "update_time_1",
-                    default=current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)[0],
-                ): TimeSelector(),
-                vol.Optional(
-                    "update_time_2",
-                    default=(
-                        current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)[1]
-                        if len(current.get(CONF_UPDATE_TIMES, DEFAULT_UPDATE_TIMES)) > 1
-                        else DEFAULT_UPDATE_TIMES[1]
-                    ),
-                ): TimeSelector(),
-                vol.Required(
-                    CONF_HISTORY_DAYS,
-                    default=current.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS),
-                ): vol.Coerce(int),
-            }
-        )
+            ): TimeSelector(),
+            vol.Required(
+                CONF_HISTORY_DAYS,
+                default=current.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS),
+            ): vol.Coerce(int),
+        }
+        configured_location = current.get(CONF_LOCATION_ENTITY)
+        if configured_location:
+            schema_fields.pop(location_key)
+            schema_fields[vol.Optional(CONF_LOCATION_ENTITY, default=configured_location)] = EntitySelector(
+                EntitySelectorConfig(domain=["person", "device_tracker"])
+            )
+
+        schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="general", data_schema=schema, errors=errors)
 
     # ------------------------------------------------------------------

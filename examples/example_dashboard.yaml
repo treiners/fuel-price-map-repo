@@ -1,194 +1,191 @@
-# Example dashboard: Fuel Price Map
+# Complete Home Assistant dashboard example for Fuel Price Map.
 #
-# Replace `unleaded` below with any other configured fuel type key if you
-# want a dedicated home-screen tile per fuel type (e.g. diesel, premium_unleaded).
+# Requires via HACS: bubble-card, auto-entities, card-mod, layout-card,
+# ha-map-card, and apexcharts-card.
 #
-# Requires (via HACS):
-#   - bubble-card            (already installed)
-#   - auto-entities          (recommended, for the sorted price list)
-#   - apexcharts-card        (recommended, for the 14-day history popup)
-#
-# Everything else (map card, select entities) is built into Home Assistant.
-
-# A note on view types: this example uses `masonry` (HA's default, always
-# safe). If you're on a `sections` view instead, Bubble Card's pop-up needs
-# to be the ONLY card in its own section - don't share a section with the
-# header/button that triggers it. Either way, the pop-up card itself must
-# be the LAST card in the view's card list and can't be inside any stack -
-# that's a hard requirement from Bubble Card itself, not optional styling.
+# The Fuel Prices view is a full-width panel whose sole card is a responsive
+# layout-card grid: list and map are side-by-side on desktop and stack below
+# 700px.
 
 views:
   - title: Fuel Prices
+    type: panel
+    cards:
+      - type: custom:layout-card
+        layout_type: custom:grid-layout
+        layout:
+          grid-template-columns: repeat(12, minmax(0, 1fr))
+          grid-template-areas: |
+            "header header header header header header header header header header header header"
+            "separator separator separator separator separator separator separator separator separator separator separator separator"
+            "list list list list list list map map map map map map"
+            "popup popup popup popup popup popup popup popup popup popup popup popup"
+          mediaquery:
+            "(max-width: 700px)":
+              grid-template-columns: 1fr
+              grid-template-areas: |
+                "header"
+                "separator"
+                "list"
+                "map"
+                "popup"
+        cards:
+          - type: custom:bubble-card
+            view_layout:
+              grid-area: header
+            card_type: button
+            button_type: name
+            name: ⛽ Fuel Price Map
+            icon: mdi:gas-station
+            show_name: true
+            show_icon: true
+            button_action:
+              tap_action:
+                action: none
+            sub_button:
+              - icon: mdi:tune
+                tap_action:
+                  action: navigate
+                  navigation_path: "#fuel-settings"
+              - entity: sensor.fuel_price_map_active_location
+                name: Toggle search location
+                tap_action:
+                  action: call-service
+                  service: fuel_price_map.toggle_location
+
+          - type: custom:bubble-card
+            view_layout:
+              grid-area: separator
+            card_type: separator
+            name: Cheapest nearby
+
+          - type: custom:auto-entities
+            view_layout:
+              grid-area: list
+            card:
+              type: entities
+              card_mod:
+                style: |
+                  ha-card {
+                    max-height: min(65vh, 620px);
+                    overflow-y: auto;
+                  }
+            filter:
+              include:
+                - domain: geo_location
+                  attributes:
+                    source: fuel_price_map
+              exclude: []
+            sort:
+              method: attribute
+              attribute: effective_price
+              numeric: true
+
+          - type: custom:map-card
+            view_layout:
+              grid-area: map
+            theme_mode: dark
+            zoom: 13
+            focus_entity: sensor.fuel_price_map_active_location
+            focus_follow: refocus
+            card_mod:
+              style: |
+                ha-card {
+                  width: 100%;
+                  height: clamp(400px, 75vh, 800px);
+                }
+            # Active location is a focus target only, not a visible marker.
+            entities:
+              - entity: sensor.fuel_price_map_rank_1
+                display: attribute
+                attribute: map_label
+                color: "#00c853"
+              - entity: sensor.fuel_price_map_rank_2
+                display: attribute
+                attribute: map_label
+                color: "#64b62c"
+              - entity: sensor.fuel_price_map_rank_3
+                display: attribute
+                attribute: map_label
+                color: "#9ccc0a"
+              - entity: sensor.fuel_price_map_rank_4
+                display: attribute
+                attribute: map_label
+                color: "#cddc39"
+              - entity: sensor.fuel_price_map_rank_5
+                display: attribute
+                attribute: map_label
+                color: "#ffeb3b"
+              - entity: sensor.fuel_price_map_rank_6
+                display: attribute
+                attribute: map_label
+                color: "#ffc107"
+              - entity: sensor.fuel_price_map_rank_7
+                display: attribute
+                attribute: map_label
+                color: "#ff9800"
+              - entity: sensor.fuel_price_map_rank_8
+                display: attribute
+                attribute: map_label
+                color: "#fb6d3a"
+              - entity: sensor.fuel_price_map_rank_9
+                display: attribute
+                attribute: map_label
+                color: "#f4511e"
+              - entity: sensor.fuel_price_map_rank_10
+                display: attribute
+                attribute: map_label
+                color: "#e53935"
+
+          - type: custom:bubble-card
+            view_layout:
+              grid-area: popup
+            card_type: pop-up
+            hash: "#fuel-settings"
+            name: Filters
+            icon: mdi:tune
+            cards:
+              - type: custom:auto-entities
+                card:
+                  type: entities
+                  title: Fuel Price Map filters
+                filter:
+                  include:
+                    - integration: fuel_price_map
+                      domain: select
+                sort:
+                  method: entity_id
+
+  - title: Home
     type: masonry
     cards:
-      # ---------------------------------------------------------------
-      # SUMMARY / FILTERS
-      # ---------------------------------------------------------------
       - type: custom:bubble-card
-        card_type: header
-        button_type: name
-        name: ⛽ Fuel Price Map
-        sub_button:
-          - icon: mdi:tune
-            tap_action:
-              action: navigate
-              navigation_path: "#fuel-settings"
+        card_type: button
+        entity: sensor.fuel_price_map_unleaded_petrol_ulp_lowest_price
+        name: Cheapest Unleaded
+        icon: mdi:gas-station
+        show_state: true
+        show_attribute: true
+        attribute: station_name
+        tap_action:
+          action: navigate
+          navigation_path: "#fuel-history-unleaded"
 
-      - type: custom:bubble-card
-        card_type: separator
-        name: Cheapest nearby
-
-      # Sorted list of the lowest-cost options for the currently selected
-      # fuel type / brand. geo_location entities are already filtered +
-      # sorted by the integration, auto-entities just renders them.
-      # card_mod must go on the INNER card (auto-entities itself doesn't
-      # render an ha-card to style - it just delegates to `card:` below).
-      - type: custom:auto-entities
-        card:
-          type: entities
-          card_mod:
-            style: |
-              ha-card {
-                max-height: min(40vh, 320px);
-                overflow-y: auto;
-              }
-        filter:
-          include:
-            - domain: geo_location
-              attributes:
-                source: fuel_price_map
-          exclude: []
-        sort:
-          method: attribute
-          attribute: effective_price
-          numeric: true
-
-      # ---------------------------------------------------------------
-      # RIGHT: MAP
-      # ---------------------------------------------------------------
-      # Uses ha-map-card (HACS: https://github.com/nathan-gs/ha-map-card),
-      # not the plain built-in `map` card, so each marker can show its price
-      # and be colour-coded by it.
-      #
-      # Entity IDs here are FIXED (sensor.fuel_price_map_rank_1..10) - they
-      # always exist and their *values* update live to reflect whichever
-      # fuel type / brand is currently selected via the dropdowns above, so
-      # this config never needs to change even though which stations they
-      # point at does. Increase/decrease the list to match map_marker_count
-      # (default 10) if you changed it in the integration's options.
-      #
-      # `map_label` is a pre-formatted string ("175.7¢*") computed server-side
-      # - effective (post-discount) price, with a trailing * only when a
-      # discount actually applies. Baked in as one attribute rather than
-      # relying on the map card to conditionally format anything itself.
-      #
-      # `color` is a static green->red gradient matched to rank (rank 1 =
-      # cheapest = green), not a live per-price calculation - since rank 1
-      # is always the cheapest by construction, this achieves the same
-      # "cheapest green, priciest red" effect without needing the map card
-      # to do any price math itself.
-      - type: custom:map-card
-        theme_mode: dark
-        zoom: 13
-        card_mod:
-          style: |
-            ha-card {
-              min-height: 280px;
-              height: min(65vh, 620px);
-            }
-        entities:
-          - entity: zone.home
-          - entity: sensor.fuel_price_map_rank_1
-            display: attribute
-            attribute: map_label
-            color: "#00c853"
-          - entity: sensor.fuel_price_map_rank_2
-            display: attribute
-            attribute: map_label
-            color: "#64b62c"
-          - entity: sensor.fuel_price_map_rank_3
-            display: attribute
-            attribute: map_label
-            color: "#9ccc0a"
-          - entity: sensor.fuel_price_map_rank_4
-            display: attribute
-            attribute: map_label
-            color: "#cddc39"
-          - entity: sensor.fuel_price_map_rank_5
-            display: attribute
-            attribute: map_label
-            color: "#ffeb3b"
-          - entity: sensor.fuel_price_map_rank_6
-            display: attribute
-            attribute: map_label
-            color: "#ffc107"
-          - entity: sensor.fuel_price_map_rank_7
-            display: attribute
-            attribute: map_label
-            color: "#ff9800"
-          - entity: sensor.fuel_price_map_rank_8
-            display: attribute
-            attribute: map_label
-            color: "#fb6d3a"
-          - entity: sensor.fuel_price_map_rank_9
-            display: attribute
-            attribute: map_label
-            color: "#f4511e"
-          - entity: sensor.fuel_price_map_rank_10
-            display: attribute
-            attribute: map_label
-            color: "#e53935"
-
-      # Bubble Card requirement: the pop-up must be the LAST card in the
-      # view and not nested in any stack/section with other cards - that's
-      # why this sits here rather than next to the header button that
-      # opens it.
       - type: custom:bubble-card
         card_type: pop-up
-        hash: "#fuel-settings"
-        name: Filters
-        icon: mdi:tune
-        card:
-          - type: entities
-            entities:
-              - entity: select.fuel_price_map_fuel_type
-              - entity: select.fuel_price_map_preferred_brand
-              - entity: select.fuel_price_map_sort_order
-
----
-# ---------------------------------------------------------------------
-# Home-screen summary card (small tile -> tap opens 14-day history).
-# The masonry view above automatically stacks these cards on phone screens;
-# the map and list use viewport-relative sizing rather than desktop pixels.
-# Put this on any other dashboard/view.
-# ---------------------------------------------------------------------
-- type: custom:bubble-card
-  card_type: button
-  entity: sensor.fuel_price_map_unleaded_petrol_ulp_lowest_price
-  name: Cheapest Unleaded
-  icon: mdi:gas-station
-  show_state: true
-  show_attribute: true
-  attribute: station_name
-  tap_action:
-    action: navigate
-    navigation_path: "#fuel-history-unleaded"
-
-- type: custom:bubble-card
-  card_type: pop-up
-  hash: "#fuel-history-unleaded"
-  name: Unleaded — 14 day history
-  card:
-    - type: custom:apexcharts-card
-      header:
-        title: Lowest Unleaded Price (c/L)
-        show: true
-      graph_span: 14d
-      series:
-        - entity: sensor.fuel_price_map_unleaded_petrol_ulp_lowest_price
-          name: Lowest price
-          type: line
-          data_generator: |
-            return entity.attributes.history.map(h => {
-              return [new Date(h.ts).getTime(), h.price];
-            });
+        hash: "#fuel-history-unleaded"
+        name: Unleaded — 14 day history
+        cards:
+          - type: custom:apexcharts-card
+            header:
+              title: Lowest Unleaded Price (c/L)
+              show: true
+            graph_span: 14d
+            series:
+              - entity: sensor.fuel_price_map_unleaded_petrol_ulp_lowest_price
+                name: Lowest price
+                type: line
+                data_generator: |
+                  return entity.attributes.history.map(h => {
+                    return [new Date(h.ts).getTime(), h.price];
+                  });
